@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>โปรแกรมบัญชีสำหรับบริษัทขายของให้หน่วยงานรัฐ</title>
+  <!--
+    This single‑page web application implements a simple accounting system for a company
+    that sells goods or services to government agencies.  The design follows key UI/UX
+    principles for accounting websites: clean visual elements, clear layouts that enable
+    quick comprehension, familiar form components, and accessible colour contrasts【561994329445771†L129-L143】【561994329445771†L177-L183】.
+    
+    The application uses the browser's localStorage to persist data; no server is needed.
+    A bar chart summarises monthly income and expenses using Chart.js, an open‑source
+    JavaScript charting library.  All labels and messages are in Thai for local
+    usability.
+  -->
+  <!-- Load the Sarabun font for Thai and Latin scripts -->
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
+  <!-- Load Chart.js from jsDelivr CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Load SheetJS (xlsx) for Excel export.  This standalone script exposes a global
+       XLSX object and supports writing XLSX files directly from the browser【67124373595846†L45-L70】. -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <style>
+    /* Global styles following UI guidelines for clarity and ease of use */
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Sarabun', sans-serif;
+      background-color: #f7f7f7;
+      color: #333;
+    }
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+    }
+    h1 {
+      text-align: center;
+      margin-top: 0;
+      margin-bottom: 20px;
+      color: #0d47a1;
+    }
+    /* Use CSS grid for the entry form to minimise excessive gaps between fields. Each cell
+       adapts its width based on available space (min 200px) and aligns its content
+       neatly at the bottom. This reduces the large empty area seen in the previous
+       flexbox implementation. */
+    form {
+      display: grid;
+      /* Use a responsive grid with columns that are at least 220px wide. Using
+         auto-fill ensures items wrap appropriately, and auto-flow dense fills
+         available gaps, preventing large blank areas. */
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      grid-auto-flow: dense;
+      gap: 8px;
+      margin-bottom: 16px;
+      align-items: end;
+    }
+    form label {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.9rem;
+      gap: 4px;
+    }
+    input[type="date"],
+    input[type="text"],
+    input[type="number"],
+    select {
+      padding: 8px;
+      margin-top: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    button[type="submit"] {
+      background-color: #0d47a1;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      align-self: flex-end;
+    }
+    button[type="submit"]:hover {
+      background-color: #093170;
+    }
+    .month-selector {
+      margin-bottom: 20px;
+    }
+    .month-selector label {
+      font-weight: 600;
+    }
+    .summary {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .summary-item {
+      flex: 1 1 30%;
+      background-color: #f0f4ff;
+      border: 1px solid #e0e8ff;
+      border-radius: 6px;
+      padding: 12px;
+      text-align: center;
+    }
+    .summary-item h3 {
+      margin: 0 0 6px 0;
+      font-size: 1rem;
+      color: #0d47a1;
+    }
+    .summary-item p {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 600;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 8px;
+      border-bottom: 1px solid #e0e0e0;
+      text-align: left;
+    }
+    th {
+      background-color: #f0f4ff;
+      color: #0d47a1;
+    }
+
+    /* Align numeric amount column header and cells to the right so that the
+       column heading lines up with the right‑aligned numbers. */
+    .amount-header, .amount-cell {
+      text-align: right;
+    }
+
+    /* Colour highlighting for income and expense amount cells */
+    .income-amount {
+      background-color: #e8f5e9; /* light green background */
+      color: #388e3c;            /* dark green text */
+    }
+    .expense-amount {
+      background-color: #ffebee; /* light red background */
+      color: #c62828;            /* dark red text */
+    }
+
+    /* Centre align the action column header and cells */
+    .action-header, .action-cell {
+      text-align: center;
+    }
+    td:last-child {
+      text-align: right;
+    }
+    .delete-button {
+      background-color: #e53935;
+      color: #fff;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8rem;
+    }
+    .delete-button:hover {
+      background-color: #c62828;
+    }
+    canvas {
+      margin-top: 30px;
+      max-height: 360px;
+    }
+    /* Export button styling */
+    .export-button {
+      background-color: #009688;
+      color: #fff;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    .export-button:hover {
+      background-color: #00796b;
+    }
+    /* Analytics section styling */
+    .analytics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    .analysis-item {
+      flex: 1 1 22%;
+      background-color: #fff9e7;
+      border: 1px solid #ffecb3;
+      border-radius: 6px;
+      padding: 10px;
+      text-align: center;
+    }
+    .analysis-item h3 {
+      margin: 0 0 5px 0;
+      font-size: 0.9rem;
+      color: #f57c00;
+    }
+    .analysis-item p {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #ff6f00;
+    }
+    /* Category selection styling */
+    .category-group {
+      /* Arrange the category options horizontally with equal spacing */
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      align-items: center;
+    }
+    .category-group .group-label {
+      font-weight: 600;
+      margin-right: 8px;
+    }
+    .category-option {
+      /* Each category option behaves like a button; hide the native radio and style the span */
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
+    .category-option input {
+      /* Hide the native radio button circles */
+      position: absolute;
+      opacity: 0;
+    }
+    .category-option span {
+      display: block;
+      padding: 8px 16px;
+      border: 1px solid #e0e8ff;
+      border-radius: 4px;
+      background-color: #f0f4ff;
+      color: #0d47a1;
+      cursor: pointer;
+      text-align: center;
+      user-select: none;
+    }
+    /* Colour category button according to its value when selected */
+    .category-option input[value="income"]:checked + span {
+      background-color: #4caf50;
+      border-color: #388e3c;
+      color: #ffffff;
+    }
+    .category-option input[value="expense"]:checked + span {
+      background-color: #ef5350;
+      border-color: #c62828;
+      color: #ffffff;
+    }
+
+    /* Login page styles */
+    .login-container {
+      max-width: 360px;
+      margin: 80px auto;
+      padding: 20px;
+      background-color: #ffffff;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
+      text-align: center;
+    }
+    .login-container h2 {
+      margin-top: 0;
+      margin-bottom: 20px;
+      color: #0d47a1;
+    }
+    .login-container label {
+      display: block;
+      text-align: left;
+      margin-bottom: 10px;
+      font-size: 0.9rem;
+    }
+    .login-container input[type="text"],
+    .login-container input[type="password"] {
+      width: 100%;
+      padding: 8px;
+      margin-top: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+    .login-container button[type="submit"] {
+      width: 100%;
+      padding: 10px 0;
+      background-color: #0d47a1;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .login-container button[type="submit"]:hover {
+      background-color: #093170;
+    }
+    .login-container .error-message {
+      color: #e53935;
+      margin-top: 10px;
+      font-size: 0.85rem;
+    }
+
+    /* Logout button styling */
+    .logout-button {
+      background-color: #f44336;
+      color: #ffffff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .logout-button:hover {
+      background-color: #d32f2f;
+    }
+  </style>
+</head>
+<body>
+  <!-- Login form container. It is shown when the user is not logged in -->
+  <div id="loginContainer" class="login-container" style="display: none;">
+    <h2>เข้าสู่ระบบ</h2>
+    <form id="login-form">
+      <label>
+        ชื่อผู้ใช้
+        <input type="text" id="login-username" required>
+      </label>
+      <label>
+        รหัสผ่าน
+        <input type="password" id="login-password" required>
+      </label>
+      <button type="submit">เข้าสู่ระบบ</button>
+    </form>
+    <p id="login-error" class="error-message"></p>
+  </div>
+
+  <!-- Main application container. Hidden until login is successful -->
+  <div id="appContainer" class="container" style="display: none;">
+    <!-- Logout button aligned right -->
+    <div style="text-align: right;">
+      <button id="logoutButton" class="logout-button">ออกจากระบบ</button>
+    </div>
+    <h1>ระบบบัญชีรายเดือน</h1>
+    <!-- Transaction entry form -->
+    <form id="transaction-form">
+      <label>
+        วันที่
+        <input type="date" id="date" required />
+      </label>
+      <label>
+        รายละเอียด
+        <input type="text" id="description" placeholder="เช่น ค่าสินค้า" required />
+      </label>
+      <!-- Category selection rendered as two clickable boxes. The native radio inputs are hidden
+           and the spans act as selectable buttons. When selected, the box turns green. -->
+      <div class="category-group">
+        <span class="group-label">ประเภท</span>
+        <label class="category-option">
+          <input type="radio" name="category" value="income" checked />
+          <span>รายรับ</span>
+        </label>
+        <label class="category-option">
+          <input type="radio" name="category" value="expense" />
+          <span>รายจ่าย</span>
+        </label>
+      </div>
+      <label>
+        จำนวนเงิน (บาท)
+        <input type="number" id="amount" step="0.01" min="0" required />
+      </label>
+      <label>
+        หมายเหตุ
+        <input type="text" id="note" placeholder="หมายเหตุ (ไม่จำเป็น)" />
+      </label>
+      <button type="submit">เพิ่มรายการ</button>
+    </form>
+    <!-- Month selection -->
+    <div class="month-selector">
+      <label for="monthSelector">เลือกเดือน:</label>
+      <select id="monthSelector"></select>
+    </div>
+    <!-- Summary metrics -->
+    <div class="summary">
+      <div class="summary-item">
+        <h3>รายรับรวม</h3>
+        <p id="totalIncome">0.00</p>
+      </div>
+      <div class="summary-item">
+        <h3>รายจ่ายรวม</h3>
+        <p id="totalExpense">0.00</p>
+      </div>
+      <div class="summary-item">
+        <h3>กำไร/ขาดทุน</h3>
+        <p id="netProfit">0.00</p>
+      </div>
+    </div>
+    <!-- Table of transactions -->
+    <table id="transactionTable">
+      <thead>
+        <tr>
+          <th>วันที่</th>
+          <th>รายละเอียด</th>
+          <th>ประเภท</th>
+          <th class="amount-header">จำนวนเงิน (บาท)</th>
+          <th>หมายเหตุ</th>
+          <th class="action-header">การกระทำ</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <!-- Chart canvas -->
+    <canvas id="summaryChart"></canvas>
+    <!-- Export button and analytics section -->
+    <div style="margin-top: 20px; text-align: right;">
+      <button id="exportButton" class="export-button">ส่งออกเป็น Excel</button>
+    </div>
+    <div class="analytics">
+      <div class="analysis-item">
+        <h3>จำนวนรายการ</h3>
+        <p id="numTransactions">0</p>
+      </div>
+      <div class="analysis-item">
+        <h3>เฉลี่ยรายรับต่อรายการ</h3>
+        <p id="avgIncome">0.00</p>
+      </div>
+      <div class="analysis-item">
+        <h3>เฉลี่ยรายจ่ายต่อรายการ</h3>
+        <p id="avgExpense">0.00</p>
+      </div>
+      <div class="analysis-item">
+        <h3>ยอดสูงสุด</h3>
+        <p id="maxTransaction">0.00</p>
+      </div>
+    </div>
+  </div>
+  <script>
+    // Array of transaction objects loaded from localStorage
+    let transactions = [];
+
+    /**
+     * Load transactions from localStorage into the 'transactions' array.
+     */
+    function loadTransactions() {
+      const stored = localStorage.getItem('transactions');
+      if (stored) {
+        try {
+          transactions = JSON.parse(stored);
+        } catch (e) {
+          transactions = [];
+        }
+      }
+    }
+
+    /**
+     * Save the current 'transactions' array back into localStorage.
+     */
+    function saveTransactions() {
+      localStorage.setItem('transactions', JSON.stringify(transactions));
+    }
+
+    /**
+     * Convert a date string (yyyy-mm-dd) into a year‑month key (yyyy-mm).
+     * This is used to group transactions by month.
+     * @param {string} dateStr ISO date string
+     * @returns {string} Year‑month key
+     */
+    function monthKey(dateStr) {
+      const d = new Date(dateStr);
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      return year + '-' + (month < 10 ? '0' + month : month);
+    }
+
+    /**
+     * Update the month selector drop‑down based on existing transactions.
+     * It lists all months present in the data and selects the current month if available.
+     */
+    function updateMonthSelector() {
+      const selector = document.getElementById('monthSelector');
+      // Compute unique month keys
+      const months = Array.from(new Set(transactions.map(t => monthKey(t.date))));
+      months.sort();
+      selector.innerHTML = '';
+      months.forEach(m => {
+        const option = document.createElement('option');
+        option.value = m;
+        option.textContent = m;
+        selector.appendChild(option);
+      });
+      // Determine default selected month (current month if present, else the last in list)
+      const todayKey = monthKey(new Date().toISOString().split('T')[0]);
+      if (months.includes(todayKey)) {
+        selector.value = todayKey;
+      } else if (months.length > 0) {
+        selector.value = months[months.length - 1];
+      }
+      updateTableAndSummary();
+    }
+
+    /**
+     * Render the transaction table and summary metrics for the currently selected month.
+     */
+    function updateTableAndSummary() {
+      const month = document.getElementById('monthSelector').value;
+      const tbody = document.getElementById('transactionTable').querySelector('tbody');
+      tbody.innerHTML = '';
+      let totalIncome = 0;
+      let totalExpense = 0;
+      transactions.forEach((t, index) => {
+        if (monthKey(t.date) === month) {
+          const tr = document.createElement('tr');
+          // Assign a CSS class to the amount cell based on the transaction type for colouring
+          const amountClass = t.category === 'income' ? 'income-amount' : 'expense-amount';
+          tr.innerHTML =
+            '<td>' + t.date + '</td>' +
+            '<td>' + t.description + '</td>' +
+            '<td>' + (t.category === 'income' ? 'รายรับ' : 'รายจ่าย') + '</td>' +
+            '<td class="amount-cell ' + amountClass + '">' +
+              parseFloat(t.amount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+            '</td>' +
+            '<td>' + (t.note ? t.note : '') + '</td>' +
+            '<td class="action-cell"><button class="delete-button" onclick="deleteTransaction(' + index + ')">ลบ</button></td>';
+          tbody.appendChild(tr);
+          if (t.category === 'income') {
+            totalIncome += parseFloat(t.amount);
+          } else {
+            totalExpense += parseFloat(t.amount);
+          }
+        }
+      });
+      document.getElementById('totalIncome').textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('totalExpense').textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      document.getElementById('netProfit').textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      // Update the chart and analytics after computing the summary values
+      updateChart();
+      updateAnalytics();
+    }
+
+    /**
+     * Delete a transaction by its index in the array.
+     * This function is bound to the delete buttons in the table.
+     * @param {number} index Index in the transactions array
+     */
+    function deleteTransaction(index) {
+      if (index >= 0 && index < transactions.length) {
+        transactions.splice(index, 1);
+        saveTransactions();
+        updateMonthSelector();
+      }
+    }
+
+    /**
+     * Generate or update the summary bar chart of monthly income and expenses.
+     */
+    function updateChart() {
+      // Aggregate totals by month
+      const totals = {};
+      transactions.forEach(t => {
+        const key = monthKey(t.date);
+        if (!totals[key]) {
+          totals[key] = { income: 0, expense: 0 };
+        }
+        if (t.category === 'income') {
+          totals[key].income += parseFloat(t.amount);
+        } else {
+          totals[key].expense += parseFloat(t.amount);
+        }
+      });
+      const labels = Object.keys(totals).sort();
+      const incomes = labels.map(m => totals[m].income);
+      const expenses = labels.map(m => totals[m].expense);
+      const ctx = document.getElementById('summaryChart').getContext('2d');
+      // Destroy previous chart instance if exists to avoid memory leaks
+      if (window.chartInstance) {
+        window.chartInstance.destroy();
+      }
+      window.chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'รายรับ',
+              backgroundColor: '#4caf50',
+              borderColor: '#388e3c',
+              borderRadius: 4,
+              data: incomes
+            },
+            {
+              label: 'รายจ่าย',
+              backgroundColor: '#ef5350',
+              borderColor: '#c62828',
+              borderRadius: 4,
+              data: expenses
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: 'เดือน'
+              }
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'จำนวนเงิน (บาท)'
+              },
+              beginAtZero: true
+            }
+          },
+          plugins: {
+            legend: {
+              position: 'top'
+            },
+            title: {
+              display: true,
+              text: 'รายรับและรายจ่ายรวมต่อเดือน'
+            }
+          }
+        }
+      });
+    }
+
+    /**
+     * Compute additional metrics for the currently selected month and update the analytics section.
+     * The metrics include: number of transactions, average income per transaction, average expense
+     * per transaction, and the largest single transaction value.
+     */
+    function updateAnalytics() {
+      const month = document.getElementById('monthSelector').value;
+      const monthTransactions = transactions.filter(t => monthKey(t.date) === month);
+      const num = monthTransactions.length;
+      let incomeCount = 0, expenseCount = 0;
+      let incomeSum = 0, expenseSum = 0;
+      let maxValue = 0;
+      monthTransactions.forEach(t => {
+        const amount = parseFloat(t.amount);
+        if (t.category === 'income') {
+          incomeCount++;
+          incomeSum += amount;
+        } else {
+          expenseCount++;
+          expenseSum += amount;
+        }
+        if (amount > maxValue) maxValue = amount;
+      });
+      document.getElementById('numTransactions').textContent = num;
+      document.getElementById('avgIncome').textContent = incomeCount ? (incomeSum / incomeCount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+      document.getElementById('avgExpense').textContent = expenseCount ? (expenseSum / expenseCount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+      document.getElementById('maxTransaction').textContent = maxValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    /**
+     * Export all transactions to an Excel file.  Uses SheetJS to create a workbook and trigger download.
+     * The workbook will contain a single worksheet named "Transactions" with Thai column headers.
+     */
+    function exportToExcel() {
+      // Map transactions to an array with readable column names
+      const data = transactions.map(t => ({
+        'วันที่': t.date,
+        'รายละเอียด': t.description,
+        'ประเภท': t.category === 'income' ? 'รายรับ' : 'รายจ่าย',
+        'จำนวนเงิน': t.amount,
+        'หมายเหตุ': t.note || ''
+      }));
+      const ws = XLSX.utils.json_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+      // Trigger the file download.  The filename includes the date to help identify exports.
+      const now = new Date();
+      const filename = 'transactions_' + now.toISOString().split('T')[0] + '.xlsx';
+      XLSX.writeFile(wb, filename);
+    }
+
+    // Bind form submission event
+    document.getElementById('transaction-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const date = document.getElementById('date').value;
+      const desc = document.getElementById('description').value.trim();
+      // Read the selected category from the radio inputs
+      const categoryInput = document.querySelector('input[name="category"]:checked');
+      const category = categoryInput ? categoryInput.value : 'income';
+      const amount = document.getElementById('amount').value;
+      const note = document.getElementById('note').value.trim();
+      if (!date || !desc || !amount) return;
+      transactions.push({ date: date, description: desc, category: category, amount: parseFloat(amount), note: note });
+      saveTransactions();
+      this.reset();
+      // After resetting the form, set the date back to today by default
+      document.getElementById('date').value = new Date().toISOString().split('T')[0];
+      updateMonthSelector();
+    });
+
+    // Bind month selector change event
+    document.getElementById('monthSelector').addEventListener('change', updateTableAndSummary);
+
+    // Bind export button click event to generate and download an Excel file
+    document.getElementById('exportButton').addEventListener('click', exportToExcel);
+
+    // --- Login system implementation ---
+    // Sample user credentials. In a real application, replace this with a secure authentication mechanism.
+    const users = [
+      { username: 'admin', password: '1234' }
+    ];
+
+    /**
+     * Show the login form and hide the main app container.
+     */
+    function showLogin() {
+      document.getElementById('loginContainer').style.display = 'block';
+      document.getElementById('appContainer').style.display = 'none';
+    }
+
+    /**
+     * Show the main app after successful login and initialise the data.
+     */
+    function showApp() {
+      document.getElementById('loginContainer').style.display = 'none';
+      document.getElementById('appContainer').style.display = 'block';
+      // Initialize or refresh the app data when shown
+      loadTransactions();
+      updateMonthSelector();
+      // Reset date input to today's date
+      document.getElementById('date').value = new Date().toISOString().split('T')[0];
+    }
+
+    // Handle login form submission
+    document.getElementById('login-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+      const user = users.find(u => u.username === username && u.password === password);
+      if (user) {
+        // Save login status to localStorage and display the app
+        localStorage.setItem('loggedInUser', username);
+        document.getElementById('login-error').textContent = '';
+        showApp();
+      } else {
+        document.getElementById('login-error').textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
+      }
+    });
+
+    // Handle logout action
+    document.getElementById('logoutButton').addEventListener('click', function () {
+      localStorage.removeItem('loggedInUser');
+      showLogin();
+    });
+
+    // Determine whether to show login or app on initial load
+    if (localStorage.getItem('loggedInUser')) {
+      showApp();
+    } else {
+      showLogin();
+    }
+    // --- End of login implementation ---
+  </script>
+</body>
+</html>
