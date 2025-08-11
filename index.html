@@ -4,24 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>โปรแกรมบัญชีสำหรับบริษัทขายของให้หน่วยงานรัฐ</title>
-  <!--
-    This single‑page web application implements a simple accounting system for a company
-    that sells goods or services to government agencies.  The design follows key UI/UX
-    principles for accounting websites: clean visual elements, clear layouts that enable
-    quick comprehension, familiar form components, and accessible colour contrasts【561994329445771†L129-L143】【561994329445771†L177-L183】.
-    
-    The application uses the browser's localStorage to persist data; no server is needed.
-    A bar chart summarises monthly income and expenses using Chart.js, an open‑source
-    JavaScript charting library.  All labels and messages are in Thai for local
-    usability.
-  -->
-  <!-- Load the Sarabun font for Thai and Latin scripts -->
+  
   <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
-  <!-- Load Chart.js from jsDelivr CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- Load SheetJS (xlsx) for Excel export.  This standalone script exposes a global
-       XLSX object and supports writing XLSX files directly from the browser【67124373595846†L45-L70】. -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
   <style>
     /* Global styles following UI guidelines for clarity and ease of use */
     body {
@@ -45,15 +35,8 @@
       margin-bottom: 20px;
       color: #0d47a1;
     }
-    /* Use CSS grid for the entry form to minimise excessive gaps between fields. Each cell
-       adapts its width based on available space (min 200px) and aligns its content
-       neatly at the bottom. This reduces the large empty area seen in the previous
-       flexbox implementation. */
     form {
       display: grid;
-      /* Use a responsive grid with columns that are at least 220px wide. Using
-         auto-fill ensures items wrap appropriately, and auto-flow dense fills
-         available gaps, preventing large blank areas. */
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       grid-auto-flow: dense;
       gap: 8px;
@@ -135,24 +118,17 @@
       background-color: #f0f4ff;
       color: #0d47a1;
     }
-
-    /* Align numeric amount column header and cells to the right so that the
-       column heading lines up with the right‑aligned numbers. */
     .amount-header, .amount-cell {
       text-align: right;
     }
-
-    /* Colour highlighting for income and expense amount cells */
     .income-amount {
-      background-color: #e8f5e9; /* light green background */
-      color: #388e3c;            /* dark green text */
+      background-color: #e8f5e9;
+      color: #388e3c;
     }
     .expense-amount {
-      background-color: #ffebee; /* light red background */
-      color: #c62828;            /* dark red text */
+      background-color: #ffebee;
+      color: #c62828;
     }
-
-    /* Centre align the action column header and cells */
     .action-header, .action-cell {
       text-align: center;
     }
@@ -175,7 +151,6 @@
       margin-top: 30px;
       max-height: 360px;
     }
-    /* Export button styling */
     .export-button {
       background-color: #009688;
       color: #fff;
@@ -188,7 +163,6 @@
     .export-button:hover {
       background-color: #00796b;
     }
-    /* Analytics section styling */
     .analytics {
       display: flex;
       flex-wrap: wrap;
@@ -214,9 +188,7 @@
       font-weight: 600;
       color: #ff6f00;
     }
-    /* Category selection styling */
     .category-group {
-      /* Arrange the category options horizontally with equal spacing */
       display: flex;
       flex-direction: row;
       gap: 10px;
@@ -227,13 +199,11 @@
       margin-right: 8px;
     }
     .category-option {
-      /* Each category option behaves like a button; hide the native radio and style the span */
       display: flex;
       flex-direction: column;
       flex: 1 1 auto;
     }
     .category-option input {
-      /* Hide the native radio button circles */
       position: absolute;
       opacity: 0;
     }
@@ -248,7 +218,6 @@
       text-align: center;
       user-select: none;
     }
-    /* Colour category button according to its value when selected */
     .category-option input[value="income"]:checked + span {
       background-color: #4caf50;
       border-color: #388e3c;
@@ -259,8 +228,6 @@
       border-color: #c62828;
       color: #ffffff;
     }
-
-    /* Login page styles */
     .login-container {
       max-width: 360px;
       margin: 80px auto;
@@ -284,6 +251,7 @@
     .login-container input[type="text"],
     .login-container input[type="password"] {
       width: 100%;
+      box-sizing: border-box;
       padding: 8px;
       margin-top: 4px;
       border: 1px solid #ccc;
@@ -309,8 +277,6 @@
       margin-top: 10px;
       font-size: 0.85rem;
     }
-
-    /* Logout button styling */
     .logout-button {
       background-color: #f44336;
       color: #ffffff;
@@ -326,7 +292,7 @@
   </style>
 </head>
 <body>
-  <!-- Login form container. It is shown when the user is not logged in -->
+  
   <div id="loginContainer" class="login-container" style="display: none;">
     <h2>เข้าสู่ระบบ</h2>
     <form id="login-form">
@@ -343,14 +309,11 @@
     <p id="login-error" class="error-message"></p>
   </div>
 
-  <!-- Main application container. Hidden until login is successful -->
   <div id="appContainer" class="container" style="display: none;">
-    <!-- Logout button aligned right -->
     <div style="text-align: right;">
       <button id="logoutButton" class="logout-button">ออกจากระบบ</button>
     </div>
     <h1>ระบบบัญชีรายเดือน</h1>
-    <!-- Transaction entry form -->
     <form id="transaction-form">
       <label>
         วันที่
@@ -360,8 +323,6 @@
         รายละเอียด
         <input type="text" id="description" placeholder="เช่น ค่าสินค้า" required />
       </label>
-      <!-- Category selection rendered as two clickable boxes. The native radio inputs are hidden
-           and the spans act as selectable buttons. When selected, the box turns green. -->
       <div class="category-group">
         <span class="group-label">ประเภท</span>
         <label class="category-option">
@@ -383,12 +344,12 @@
       </label>
       <button type="submit">เพิ่มรายการ</button>
     </form>
-    <!-- Month selection -->
+    
     <div class="month-selector">
       <label for="monthSelector">เลือกเดือน:</label>
       <select id="monthSelector"></select>
     </div>
-    <!-- Summary metrics -->
+
     <div class="summary">
       <div class="summary-item">
         <h3>รายรับรวม</h3>
@@ -403,7 +364,7 @@
         <p id="netProfit">0.00</p>
       </div>
     </div>
-    <!-- Table of transactions -->
+    
     <table id="transactionTable">
       <thead>
         <tr>
@@ -417,9 +378,9 @@
       </thead>
       <tbody></tbody>
     </table>
-    <!-- Chart canvas -->
+    
     <canvas id="summaryChart"></canvas>
-    <!-- Export button and analytics section -->
+    
     <div style="margin-top: 20px; text-align: right;">
       <button id="exportButton" class="export-button">ส่งออกเป็น Excel</button>
     </div>
@@ -443,49 +404,39 @@
     </div>
   </div>
 
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-  
-  <script>
-    // Import the functions you need from the SDKs you need
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+<script>
+// --- เริ่มต้นการเชื่อมต่อ Firebase ---
+// *** แก้ไขตรงนี้เท่านั้น! *** ใส่ค่า Config จริงของคุณที่คัดลอกมาจากเว็บ Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyAuRZCRkcCwbavljjx2BCcytmFK6QFVPu0",
-  authDomain: "my-accounting-app-2ede3.firebaseapp.com",
-  projectId: "my-accounting-app-2ede3",
-  storageBucket: "my-accounting-app-2ede3.firebasestorage.app",
-  messagingSenderId: "70467428578",
-  appId: "1:70467428578:web:d5c80ad1cdd3cc8cd4bebb",
-  measurementId: "G-B6VVBC2X0B"
+    apiKey: "YOUR_API_KEY", // <--- แก้ไขตรงนี้
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com", // <--- แก้ไขตรงนี้
+    projectId: "YOUR_PROJECT_ID", // <--- แก้ไขตรงนี้
+    storageBucket: "YOUR_PROJECT_ID.appspot.com", // <--- แก้ไขตรงนี้
+    messagingSenderId: "YOUR_SENDER_ID", // <--- แก้ไขตรงนี้
+    appId: "YOUR_APP_ID" // <--- แก้ไขตรงนี้
 };
 
 // Initialize Firebase
-const app = firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const transactionsCollection = db.collection("transactions");
-// --- สิ้นสุดการเชื่อมต่อ ---
+try {
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const transactionsCollection = db.collection("transactions");
+    console.log("Firebase Initialized Successfully!"); // ข้อความยืนยันใน Console
+} catch (e) {
+    console.error("Error initializing Firebase:", e); // แสดง Error ถ้า Config ผิด
+}
+
 
 let latestTransactions = []; // ตัวแปรสำหรับเก็บข้อมูลล่าสุดจาก Firebase
 
-/**
- * Convert a date string (yyyy-mm-dd) into a year‑month key (yyyy-mm).
- */
 function monthKey(dateStr) {
+    if (!dateStr) return '';
     const d = new Date(dateStr);
     const year = d.getFullYear();
     const month = d.getMonth() + 1;
     return year + '-' + (month < 10 ? '0' + month : month);
 }
 
-/**
- * Update the month selector drop‑down based on existing transactions.
- */
 function updateMonthSelector(transactions) {
     const selector = document.getElementById('monthSelector');
     const currentSelectedMonth = selector.value;
@@ -509,11 +460,8 @@ function updateMonthSelector(transactions) {
     }
 }
 
-/**
- * Render the transaction table and summary metrics for the currently selected month.
- */
 function updateTableAndSummary() {
-    const transactions = latestTransactions; // ใช้ข้อมูลล่าสุดเสมอ
+    const transactions = latestTransactions;
     const month = document.getElementById('monthSelector').value;
     const tbody = document.getElementById('transactionTable').querySelector('tbody');
     tbody.innerHTML = '';
@@ -531,7 +479,7 @@ function updateTableAndSummary() {
             parseFloat(t.amount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
             '</td>' +
             '<td>' + (t.note ? t.note : '') + '</td>' +
-            '<td class="action-cell"><button class="delete-button" onclick="deleteTransaction(\'' + t.id + '\')">ลบ</button></td>'; // ใช้ t.id
+            '<td class="action-cell"><button class="delete-button" onclick="deleteTransaction(\'' + t.id + '\')">ลบ</button></td>';
         tbody.appendChild(tr);
         if (t.category === 'income') {
             totalIncome += parseFloat(t.amount);
@@ -546,9 +494,6 @@ function updateTableAndSummary() {
     updateAnalytics(transactions);
 }
 
-/**
- * Delete a transaction by its unique ID from Firestore.
- */
 function deleteTransaction(transactionId) {
     if (confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?')) {
         transactionsCollection.doc(transactionId).delete()
@@ -557,9 +502,6 @@ function deleteTransaction(transactionId) {
     }
 }
 
-/**
- * Generate or update the summary bar chart of monthly income and expenses.
- */
 function updateChart(transactions) {
     const totals = {};
     transactions.forEach(t => {
@@ -586,9 +528,6 @@ function updateChart(transactions) {
     });
 }
 
-/**
- * Compute additional metrics for the currently selected month and update the analytics section.
- */
 function updateAnalytics(transactions) {
     const month = document.getElementById('monthSelector').value;
     const monthTransactions = transactions.filter(t => monthKey(t.date) === month);
@@ -613,9 +552,6 @@ function updateAnalytics(transactions) {
     document.getElementById('maxTransaction').textContent = maxValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-/**
- * Export all transactions to an Excel file.
- */
 function exportToExcel() {
     const data = latestTransactions.map(t => ({
         'วันที่': t.date, 'รายละเอียด': t.description, 'ประเภท': t.category === 'income' ? 'รายรับ' : 'รายจ่าย', 'จำนวนเงิน': t.amount, 'หมายเหตุ': t.note || ''
@@ -628,7 +564,6 @@ function exportToExcel() {
     XLSX.writeFile(wb, filename);
 }
 
-// Bind form submission event
 document.getElementById('transaction-form').addEventListener('submit', function (e) {
     e.preventDefault();
     const newTransaction = {
@@ -638,7 +573,7 @@ document.getElementById('transaction-form').addEventListener('submit', function 
         amount: parseFloat(document.getElementById('amount').value),
         note: document.getElementById('note').value.trim()
     };
-    if (!newTransaction.date || !newTransaction.description || !newTransaction.amount) return;
+    if (!newTransaction.date || !newTransaction.description || isNaN(newTransaction.amount)) return;
     transactionsCollection.add(newTransaction)
         .then(() => {
             this.reset();
@@ -647,14 +582,11 @@ document.getElementById('transaction-form').addEventListener('submit', function 
         .catch(error => console.error("Error adding document: ", error));
 });
 
-// Bind month selector change event
 document.getElementById('monthSelector').addEventListener('change', updateTableAndSummary);
-
-// Bind export button click event
 document.getElementById('exportButton').addEventListener('click', exportToExcel);
 
 // --- Login system implementation ---
-const users = [{ username: 'admin', password: '1234' }];
+const users = [{ username: 'pittayakarn', password: '999999999' }];
 
 function showLogin() {
     document.getElementById('loginContainer').style.display = 'block';
@@ -665,15 +597,15 @@ function showApp() {
     document.getElementById('loginContainer').style.display = 'none';
     document.getElementById('appContainer').style.display = 'block';
     
-    // This is the real-time listener. It runs when the app starts.
+    // This is the real-time listener.
     transactionsCollection.orderBy("date", "desc").onSnapshot(snapshot => {
         const allTransactions = [];
         snapshot.forEach(doc => {
             allTransactions.push({ id: doc.id, ...doc.data() });
         });
-        latestTransactions = allTransactions; // Update the global variable
+        latestTransactions = allTransactions;
         updateMonthSelector(latestTransactions);
-        updateTableAndSummary(); // This function now uses latestTransactions internally
+        updateTableAndSummary();
     }, error => {
         console.error("Error fetching real-time data: ", error);
     });
@@ -706,7 +638,7 @@ if (localStorage.getItem('loggedInUser')) {
 } else {
     showLogin();
 }
-    // --- End of login implementation ---
-  </script>
+</script>
+
 </body>
 </html>
