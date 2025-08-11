@@ -442,330 +442,270 @@
       </div>
     </div>
   </div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  
   <script>
-    // Array of transaction objects loaded from localStorage
-    let transactions = [];
+    // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
-    /**
-     * Load transactions from localStorage into the 'transactions' array.
-     */
-    function loadTransactions() {
-      const stored = localStorage.getItem('transactions');
-      if (stored) {
-        try {
-          transactions = JSON.parse(stored);
-        } catch (e) {
-          transactions = [];
-        }
-      }
-    }
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyAuRZCRkcCwbavljjx2BCcytmFK6QFVPu0",
+  authDomain: "my-accounting-app-2ede3.firebaseapp.com",
+  projectId: "my-accounting-app-2ede3",
+  storageBucket: "my-accounting-app-2ede3.firebasestorage.app",
+  messagingSenderId: "70467428578",
+  appId: "1:70467428578:web:d5c80ad1cdd3cc8cd4bebb",
+  measurementId: "G-B6VVBC2X0B"
+};
 
-    /**
-     * Save the current 'transactions' array back into localStorage.
-     */
-    function saveTransactions() {
-      localStorage.setItem('transactions', JSON.stringify(transactions));
-    }
+// Initialize Firebase
+const app = firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const transactionsCollection = db.collection("transactions");
+// --- สิ้นสุดการเชื่อมต่อ ---
 
-    /**
-     * Convert a date string (yyyy-mm-dd) into a year‑month key (yyyy-mm).
-     * This is used to group transactions by month.
-     * @param {string} dateStr ISO date string
-     * @returns {string} Year‑month key
-     */
-    function monthKey(dateStr) {
-      const d = new Date(dateStr);
-      const year = d.getFullYear();
-      const month = d.getMonth() + 1;
-      return year + '-' + (month < 10 ? '0' + month : month);
-    }
+let latestTransactions = []; // ตัวแปรสำหรับเก็บข้อมูลล่าสุดจาก Firebase
 
-    /**
-     * Update the month selector drop‑down based on existing transactions.
-     * It lists all months present in the data and selects the current month if available.
-     */
-    function updateMonthSelector() {
-      const selector = document.getElementById('monthSelector');
-      // Compute unique month keys
-      const months = Array.from(new Set(transactions.map(t => monthKey(t.date))));
-      months.sort();
-      selector.innerHTML = '';
-      months.forEach(m => {
+/**
+ * Convert a date string (yyyy-mm-dd) into a year‑month key (yyyy-mm).
+ */
+function monthKey(dateStr) {
+    const d = new Date(dateStr);
+    const year = d.getFullYear();
+    const month = d.getMonth() + 1;
+    return year + '-' + (month < 10 ? '0' + month : month);
+}
+
+/**
+ * Update the month selector drop‑down based on existing transactions.
+ */
+function updateMonthSelector(transactions) {
+    const selector = document.getElementById('monthSelector');
+    const currentSelectedMonth = selector.value;
+    const months = Array.from(new Set(transactions.map(t => monthKey(t.date)))).sort();
+    selector.innerHTML = '';
+    months.forEach(m => {
         const option = document.createElement('option');
         option.value = m;
         option.textContent = m;
         selector.appendChild(option);
-      });
-      // Determine default selected month (current month if present, else the last in list)
-      const todayKey = monthKey(new Date().toISOString().split('T')[0]);
-      if (months.includes(todayKey)) {
-        selector.value = todayKey;
-      } else if (months.length > 0) {
-        selector.value = months[months.length - 1];
-      }
-      updateTableAndSummary();
+    });
+    if (months.includes(currentSelectedMonth)) {
+        selector.value = currentSelectedMonth;
+    } else {
+        const todayKey = monthKey(new Date().toISOString().split('T')[0]);
+        if (months.includes(todayKey)) {
+            selector.value = todayKey;
+        } else if (months.length > 0) {
+            selector.value = months[months.length - 1];
+        }
     }
+}
 
-    /**
-     * Render the transaction table and summary metrics for the currently selected month.
-     */
-    function updateTableAndSummary() {
-      const month = document.getElementById('monthSelector').value;
-      const tbody = document.getElementById('transactionTable').querySelector('tbody');
-      tbody.innerHTML = '';
-      let totalIncome = 0;
-      let totalExpense = 0;
-      transactions.forEach((t, index) => {
-        if (monthKey(t.date) === month) {
-          const tr = document.createElement('tr');
-          // Assign a CSS class to the amount cell based on the transaction type for colouring
-          const amountClass = t.category === 'income' ? 'income-amount' : 'expense-amount';
-          tr.innerHTML =
+/**
+ * Render the transaction table and summary metrics for the currently selected month.
+ */
+function updateTableAndSummary() {
+    const transactions = latestTransactions; // ใช้ข้อมูลล่าสุดเสมอ
+    const month = document.getElementById('monthSelector').value;
+    const tbody = document.getElementById('transactionTable').querySelector('tbody');
+    tbody.innerHTML = '';
+    let totalIncome = 0;
+    let totalExpense = 0;
+    const filteredTransactions = transactions.filter(t => monthKey(t.date) === month);
+    filteredTransactions.forEach(t => {
+        const tr = document.createElement('tr');
+        const amountClass = t.category === 'income' ? 'income-amount' : 'expense-amount';
+        tr.innerHTML =
             '<td>' + t.date + '</td>' +
             '<td>' + t.description + '</td>' +
             '<td>' + (t.category === 'income' ? 'รายรับ' : 'รายจ่าย') + '</td>' +
             '<td class="amount-cell ' + amountClass + '">' +
-              parseFloat(t.amount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+            parseFloat(t.amount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
             '</td>' +
             '<td>' + (t.note ? t.note : '') + '</td>' +
-            '<td class="action-cell"><button class="delete-button" onclick="deleteTransaction(' + index + ')">ลบ</button></td>';
-          tbody.appendChild(tr);
-          if (t.category === 'income') {
+            '<td class="action-cell"><button class="delete-button" onclick="deleteTransaction(\'' + t.id + '\')">ลบ</button></td>'; // ใช้ t.id
+        tbody.appendChild(tr);
+        if (t.category === 'income') {
             totalIncome += parseFloat(t.amount);
-          } else {
+        } else {
             totalExpense += parseFloat(t.amount);
-          }
         }
-      });
-      document.getElementById('totalIncome').textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('totalExpense').textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      document.getElementById('netProfit').textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      // Update the chart and analytics after computing the summary values
-      updateChart();
-      updateAnalytics();
-    }
+    });
+    document.getElementById('totalIncome').textContent = totalIncome.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('totalExpense').textContent = totalExpense.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('netProfit').textContent = (totalIncome - totalExpense).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    updateChart(transactions);
+    updateAnalytics(transactions);
+}
 
-    /**
-     * Delete a transaction by its index in the array.
-     * This function is bound to the delete buttons in the table.
-     * @param {number} index Index in the transactions array
-     */
-    function deleteTransaction(index) {
-      if (index >= 0 && index < transactions.length) {
-        transactions.splice(index, 1);
-        saveTransactions();
-        updateMonthSelector();
-      }
+/**
+ * Delete a transaction by its unique ID from Firestore.
+ */
+function deleteTransaction(transactionId) {
+    if (confirm('คุณแน่ใจหรือไม่ว่าต้องการลบรายการนี้?')) {
+        transactionsCollection.doc(transactionId).delete()
+            .then(() => console.log("ลบรายการสำเร็จ!"))
+            .catch(error => console.error("เกิดข้อผิดพลาดในการลบ: ", error));
     }
+}
 
-    /**
-     * Generate or update the summary bar chart of monthly income and expenses.
-     */
-    function updateChart() {
-      // Aggregate totals by month
-      const totals = {};
-      transactions.forEach(t => {
+/**
+ * Generate or update the summary bar chart of monthly income and expenses.
+ */
+function updateChart(transactions) {
+    const totals = {};
+    transactions.forEach(t => {
         const key = monthKey(t.date);
         if (!totals[key]) {
-          totals[key] = { income: 0, expense: 0 };
+            totals[key] = { income: 0, expense: 0 };
         }
         if (t.category === 'income') {
-          totals[key].income += parseFloat(t.amount);
+            totals[key].income += parseFloat(t.amount);
         } else {
-          totals[key].expense += parseFloat(t.amount);
+            totals[key].expense += parseFloat(t.amount);
         }
-      });
-      const labels = Object.keys(totals).sort();
-      const incomes = labels.map(m => totals[m].income);
-      const expenses = labels.map(m => totals[m].expense);
-      const ctx = document.getElementById('summaryChart').getContext('2d');
-      // Destroy previous chart instance if exists to avoid memory leaks
-      if (window.chartInstance) {
+    });
+    const labels = Object.keys(totals).sort();
+    const incomes = labels.map(m => totals[m].income);
+    const expenses = labels.map(m => totals[m].expense);
+    const ctx = document.getElementById('summaryChart').getContext('2d');
+    if (window.chartInstance) {
         window.chartInstance.destroy();
-      }
-      window.chartInstance = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [
-            {
-              label: 'รายรับ',
-              backgroundColor: '#4caf50',
-              borderColor: '#388e3c',
-              borderRadius: 4,
-              data: incomes
-            },
-            {
-              label: 'รายจ่าย',
-              backgroundColor: '#ef5350',
-              borderColor: '#c62828',
-              borderRadius: 4,
-              data: expenses
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            x: {
-              title: {
-                display: true,
-                text: 'เดือน'
-              }
-            },
-            y: {
-              title: {
-                display: true,
-                text: 'จำนวนเงิน (บาท)'
-              },
-              beginAtZero: true
-            }
-          },
-          plugins: {
-            legend: {
-              position: 'top'
-            },
-            title: {
-              display: true,
-              text: 'รายรับและรายจ่ายรวมต่อเดือน'
-            }
-          }
-        }
-      });
     }
+    window.chartInstance = new Chart(ctx, {
+        type: 'bar', data: { labels: labels, datasets: [ { label: 'รายรับ', backgroundColor: '#4caf50', borderColor: '#388e3c', borderRadius: 4, data: incomes }, { label: 'รายจ่าย', backgroundColor: '#ef5350', borderColor: '#c62828', borderRadius: 4, data: expenses } ] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: 'เดือน' } }, y: { title: { display: true, text: 'จำนวนเงิน (บาท)' }, beginAtZero: true } }, plugins: { legend: { position: 'top' }, title: { display: true, text: 'รายรับและรายจ่ายรวมต่อเดือน' } } }
+    });
+}
 
-    /**
-     * Compute additional metrics for the currently selected month and update the analytics section.
-     * The metrics include: number of transactions, average income per transaction, average expense
-     * per transaction, and the largest single transaction value.
-     */
-    function updateAnalytics() {
-      const month = document.getElementById('monthSelector').value;
-      const monthTransactions = transactions.filter(t => monthKey(t.date) === month);
-      const num = monthTransactions.length;
-      let incomeCount = 0, expenseCount = 0;
-      let incomeSum = 0, expenseSum = 0;
-      let maxValue = 0;
-      monthTransactions.forEach(t => {
+/**
+ * Compute additional metrics for the currently selected month and update the analytics section.
+ */
+function updateAnalytics(transactions) {
+    const month = document.getElementById('monthSelector').value;
+    const monthTransactions = transactions.filter(t => monthKey(t.date) === month);
+    const num = monthTransactions.length;
+    let incomeCount = 0, expenseCount = 0;
+    let incomeSum = 0, expenseSum = 0;
+    let maxValue = 0;
+    monthTransactions.forEach(t => {
         const amount = parseFloat(t.amount);
         if (t.category === 'income') {
-          incomeCount++;
-          incomeSum += amount;
+            incomeCount++;
+            incomeSum += amount;
         } else {
-          expenseCount++;
-          expenseSum += amount;
+            expenseCount++;
+            expenseSum += amount;
         }
         if (amount > maxValue) maxValue = amount;
-      });
-      document.getElementById('numTransactions').textContent = num;
-      document.getElementById('avgIncome').textContent = incomeCount ? (incomeSum / incomeCount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
-      document.getElementById('avgExpense').textContent = expenseCount ? (expenseSum / expenseCount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
-      document.getElementById('maxTransaction').textContent = maxValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
+    });
+    document.getElementById('numTransactions').textContent = num;
+    document.getElementById('avgIncome').textContent = incomeCount ? (incomeSum / incomeCount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+    document.getElementById('avgExpense').textContent = expenseCount ? (expenseSum / expenseCount).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+    document.getElementById('maxTransaction').textContent = maxValue.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
-    /**
-     * Export all transactions to an Excel file.  Uses SheetJS to create a workbook and trigger download.
-     * The workbook will contain a single worksheet named "Transactions" with Thai column headers.
-     */
-    function exportToExcel() {
-      // Map transactions to an array with readable column names
-      const data = transactions.map(t => ({
-        'วันที่': t.date,
-        'รายละเอียด': t.description,
-        'ประเภท': t.category === 'income' ? 'รายรับ' : 'รายจ่าย',
-        'จำนวนเงิน': t.amount,
-        'หมายเหตุ': t.note || ''
-      }));
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
-      // Trigger the file download.  The filename includes the date to help identify exports.
-      const now = new Date();
-      const filename = 'transactions_' + now.toISOString().split('T')[0] + '.xlsx';
-      XLSX.writeFile(wb, filename);
-    }
+/**
+ * Export all transactions to an Excel file.
+ */
+function exportToExcel() {
+    const data = latestTransactions.map(t => ({
+        'วันที่': t.date, 'รายละเอียด': t.description, 'ประเภท': t.category === 'income' ? 'รายรับ' : 'รายจ่าย', 'จำนวนเงิน': t.amount, 'หมายเหตุ': t.note || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+    const now = new Date();
+    const filename = 'transactions_' + now.toISOString().split('T')[0] + '.xlsx';
+    XLSX.writeFile(wb, filename);
+}
 
-    // Bind form submission event
-    document.getElementById('transaction-form').addEventListener('submit', function (e) {
-      e.preventDefault();
-      const date = document.getElementById('date').value;
-      const desc = document.getElementById('description').value.trim();
-      // Read the selected category from the radio inputs
-      const categoryInput = document.querySelector('input[name="category"]:checked');
-      const category = categoryInput ? categoryInput.value : 'income';
-      const amount = document.getElementById('amount').value;
-      const note = document.getElementById('note').value.trim();
-      if (!date || !desc || !amount) return;
-      transactions.push({ date: date, description: desc, category: category, amount: parseFloat(amount), note: note });
-      saveTransactions();
-      this.reset();
-      // After resetting the form, set the date back to today by default
-      document.getElementById('date').value = new Date().toISOString().split('T')[0];
-      updateMonthSelector();
+// Bind form submission event
+document.getElementById('transaction-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const newTransaction = {
+        date: document.getElementById('date').value,
+        description: document.getElementById('description').value.trim(),
+        category: document.querySelector('input[name="category"]:checked').value,
+        amount: parseFloat(document.getElementById('amount').value),
+        note: document.getElementById('note').value.trim()
+    };
+    if (!newTransaction.date || !newTransaction.description || !newTransaction.amount) return;
+    transactionsCollection.add(newTransaction)
+        .then(() => {
+            this.reset();
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+        })
+        .catch(error => console.error("Error adding document: ", error));
+});
+
+// Bind month selector change event
+document.getElementById('monthSelector').addEventListener('change', updateTableAndSummary);
+
+// Bind export button click event
+document.getElementById('exportButton').addEventListener('click', exportToExcel);
+
+// --- Login system implementation ---
+const users = [{ username: 'admin', password: '1234' }];
+
+function showLogin() {
+    document.getElementById('loginContainer').style.display = 'block';
+    document.getElementById('appContainer').style.display = 'none';
+}
+
+function showApp() {
+    document.getElementById('loginContainer').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'block';
+    
+    // This is the real-time listener. It runs when the app starts.
+    transactionsCollection.orderBy("date", "desc").onSnapshot(snapshot => {
+        const allTransactions = [];
+        snapshot.forEach(doc => {
+            allTransactions.push({ id: doc.id, ...doc.data() });
+        });
+        latestTransactions = allTransactions; // Update the global variable
+        updateMonthSelector(latestTransactions);
+        updateTableAndSummary(); // This function now uses latestTransactions internally
+    }, error => {
+        console.error("Error fetching real-time data: ", error);
     });
 
-    // Bind month selector change event
-    document.getElementById('monthSelector').addEventListener('change', updateTableAndSummary);
+    document.getElementById('date').value = new Date().toISOString().split('T')[0];
+}
 
-    // Bind export button click event to generate and download an Excel file
-    document.getElementById('exportButton').addEventListener('click', exportToExcel);
-
-    // --- Login system implementation ---
-    // Sample user credentials. In a real application, replace this with a secure authentication mechanism.
-    const users = [
-      { username: 'pittayakarn', password: '999999999' }
-    ];
-
-    /**
-     * Show the login form and hide the main app container.
-     */
-    function showLogin() {
-      document.getElementById('loginContainer').style.display = 'block';
-      document.getElementById('appContainer').style.display = 'none';
-    }
-
-    /**
-     * Show the main app after successful login and initialise the data.
-     */
-    function showApp() {
-      document.getElementById('loginContainer').style.display = 'none';
-      document.getElementById('appContainer').style.display = 'block';
-      // Initialize or refresh the app data when shown
-      loadTransactions();
-      updateMonthSelector();
-      // Reset date input to today's date
-      document.getElementById('date').value = new Date().toISOString().split('T')[0];
-    }
-
-    // Handle login form submission
-    document.getElementById('login-form').addEventListener('submit', function (e) {
-      e.preventDefault();
-      const username = document.getElementById('login-username').value.trim();
-      const password = document.getElementById('login-password').value.trim();
-      const user = users.find(u => u.username === username && u.password === password);
-      if (user) {
-        // Save login status to localStorage and display the app
+document.getElementById('login-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value.trim();
+    const user = users.find(u => u.username === username && u.password === password);
+    if (user) {
         localStorage.setItem('loggedInUser', username);
         document.getElementById('login-error').textContent = '';
         showApp();
-      } else {
-        document.getElementById('login-error').textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
-      }
-    });
-
-    // Handle logout action
-    document.getElementById('logoutButton').addEventListener('click', function () {
-      localStorage.removeItem('loggedInUser');
-      showLogin();
-    });
-
-    // Determine whether to show login or app on initial load
-    if (localStorage.getItem('loggedInUser')) {
-      showApp();
     } else {
-      showLogin();
+        document.getElementById('login-error').textContent = 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง';
     }
+});
+
+document.getElementById('logoutButton').addEventListener('click', function () {
+    localStorage.removeItem('loggedInUser');
+    showLogin();
+});
+
+// Determine whether to show login or app on initial load
+if (localStorage.getItem('loggedInUser')) {
+    showApp();
+} else {
+    showLogin();
+}
     // --- End of login implementation ---
   </script>
 </body>
